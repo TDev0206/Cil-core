@@ -1305,7 +1305,7 @@ module.exports = (factory, factoryOptions) => {
                 status,
                 message
             });
-            patchThisTx.setReceipt(tx.hash(), receipt);
+            receipt = patchThisTx.setReceipt(tx.hash(), receipt);
 
             let fee = 0;
 

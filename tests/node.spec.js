@@ -18,7 +18,8 @@ const {
     createDummyBlockWithTx,
     createDummyBlockInfo,
     pseudoRandomBuffer,
-    generateAddress
+    generateAddress,
+    createObjInvocationCode
 } = require('./testUtil');
 
 let seedAddress;
@@ -2190,6 +2191,50 @@ describe('Node tests', async () => {
                 const nMoneysAvailForContract = nTotalHas - nAmountSecondOutput;
 
                 assert.equal(cCoinsChange.getAmount(), nMoneysAvailForContract - totalSpent);
+            }
+        );
+
+        it('should send change along coins from cointract', async () => {
+                const node = new factory.Node();
+                const nTotalHas = 1e5;
+                const nMoneysToSend = 1e4;
+                const nFakeCoinsUsed = 1e3;
+
+                const {tx, strContractAddr} = createContractInvocationTx(
+                    createObjInvocationCode('test', [generateAddress().toString('hex'), nMoneysToSend]),
+                    true,
+                    0
+                );
+                const contract = new factory.Contract({
+                        conciliumId,
+                        balance: 1e6,
+                        contractCode: `{"test": "(strAddr, amount){send(strAddr, amount)}"}`
+                    },
+                    strContractAddr
+                );
+
+                const kp = factory.Crypto.createKeyPair();
+                tx.signForContract(kp.privateKey);
+
+                node._storage.getContract = sinon.fake.returns(contract);
+                node._app.processTxInputs = sinon.fake.returns({totalHas: nTotalHas, patch: new factory.PatchDB()});
+                node._app.coinsSpent = sinon.fake.returns(nFakeCoinsUsed);
+                node._app.getDataDelta = sinon.fake.returns(0);
+                factory.Constants.forks = {HEIGHT_FORK_SERIALIZER: 1};
+                node._processedBlock = {
+                    getHash: () => pseudoRandomBuffer().toString('hex'),
+                    getHeight: () => factory.Constants.forks.HEIGHT_FORK_SERIALIZER + 1
+                };
+
+                const {patchThisTx} = await node._processTx(new factory.PatchDB(), false, tx);
+
+                const cReceipt = patchThisTx.getReceipt(tx.getHash());
+                assert.equal(cReceipt.getInternalTxns().length, 2);
+                const cCoinsSent = cReceipt.getCoinsForTx(cReceipt.getInternalTxns()[0]);
+                assert.equal(cCoinsSent.getAmount(), nMoneysToSend);
+                const totalSpent = nFakeCoinsUsed + await node._calculateSizeFee(tx, false);
+                const cCoinsChange = cReceipt.getCoinsForTx(cReceipt.getInternalTxns()[1]);
+                assert.equal(cCoinsChange.getAmount(), nTotalHas - totalSpent);
             }
         );
 

@@ -464,7 +464,7 @@ module.exports = ({UTXO, Contract, TxReceipt}) =>
             // first time encountered
             if (!sameTxReceipt) {
                 this._mapTxReceipts.set(strTxHash, receipt);
-                return;
+                return receipt;
             }
 
             assert(sameTxReceipt.isSuccessful(), `You shouldn't continue exec of already failed TX ${strTxHash}`);
