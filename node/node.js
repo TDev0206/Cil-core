@@ -314,7 +314,7 @@ module.exports = (factory, factoryOptions) => {
                 }
 
                 if (!peer.fullyConnected) {
-                    logger.error(`Peer "${peer.remoteAddress}" missed version handshake stage`);
+                    logger.error(`Peer "${peer.address}" missed version handshake stage`);
                     peer.misbehave(1);
                     return;
                 }
