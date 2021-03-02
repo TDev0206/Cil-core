@@ -211,6 +211,14 @@ module.exports = (factory, factoryOptions) => {
             if (!Constants.CONCILIUM_DEFINITION_CONTRACT_ADDRESS) return 0;
             await this._ensureArrConciliumDefinition();
 
+            return this._arrConciliumDefinition.length;
+        }
+
+        async getActiveConciliumsCount() {
+
+            if (!Constants.CONCILIUM_DEFINITION_CONTRACT_ADDRESS) return 0;
+            await this._ensureArrConciliumDefinition();
+
             return this._arrConciliumDefinition.filter(def => def.isEnabled()).length;
         }
 

@@ -270,6 +270,7 @@ describe('Node integration tests', async () => {
         const node = new factory.Node();
         await node.ensureLoaded();
         node._storage.getConciliumsCount = () => 1;
+        node._storage.getActiveConciliumsCount = () => 1;
         node._unwindBlock = sinon.fake();
 
         const kpReceiver = factory.Crypto.createKeyPair();
@@ -300,6 +301,7 @@ describe('Node integration tests', async () => {
 
         // Genesis is stable now
         node._storage.getConciliumsCount = () => 3;
+        node._storage.getActiveConciliumsCount = () => 3;
 
         {
             const utxo = gPatch.getUtxo(txHash);
@@ -415,6 +417,7 @@ describe('Node integration tests', async () => {
         const node = new factory.Node();
         await node.ensureLoaded();
         node._storage.getConciliumsCount = () => 1;
+        node._storage.getActiveConciliumsCount = () => 1;
 
         const kpReceiver = factory.Crypto.createKeyPair();
         let txHash;
@@ -487,6 +490,7 @@ describe('Node integration tests', async () => {
         const node = new factory.Node();
         await node.ensureLoaded();
         node._storage.getConciliumsCount = () => 1;
+        node._storage.getActiveConciliumsCount = () => 1;
 
         const kpReceiver = factory.Crypto.createKeyPair();
         let txHash;
@@ -590,6 +594,7 @@ exports=new TestClass();
         await node.ensureLoaded();
 
         node._storage.getConciliumsCount = () => 1;
+        node._storage.getActiveConciliumsCount = () => 1;
         node._unwindBlock = sinon.fake();
 
         const kpReceiver = factory.Crypto.createKeyPair();
@@ -617,6 +622,7 @@ exports=new TestClass();
         await processBlock(node, gBlock);
 
         node._storage.getConciliumsCount = () => 3;
+        node._storage.getActiveConciliumsCount = () => 3;
 
         await node._storage.walletWatchAddress(kpReceiver.address);
         await node._storage.walletReIndex();
@@ -672,6 +678,7 @@ exports=new TestClass();
         await node.ensureLoaded();
 
         node._storage.getConciliumsCount = () => 1;
+        node._storage.getActiveConciliumsCount = () => 1;
         node._unwindBlock = sinon.fake();
 
         const kpReceiver = factory.Crypto.createKeyPair();
@@ -699,6 +706,7 @@ exports=new TestClass();
         await processBlock(node, gBlock);
 
         node._storage.getConciliumsCount = () => 3;
+        node._storage.getActiveConciliumsCount = () => 3;
 
         // create child block2
         let block2;
@@ -771,6 +779,7 @@ exports=new TestClass();
             node = new factory.Node();
             await node.ensureLoaded();
             node._storage.getConciliumsCount = () => 1;
+            node._storage.getActiveConciliumsCount = () => 1;
 
             kpReceiver = factory.Crypto.createKeyPair();
 
@@ -800,6 +809,7 @@ exports=new TestClass();
 
             // Genesis is stable now
             node._storage.getConciliumsCount = () => 4;
+            node._storage.getActiveConciliumsCount = () => 4;
 
             // create Tx
             const tx = createTx(0);
@@ -836,6 +846,7 @@ exports=new TestClass();
 
             // Genesis is stable now
             node._storage.getConciliumsCount = () => 4;
+            node._storage.getActiveConciliumsCount = () => 4;
 
             // create Tx
             const tx = createTx(0);
@@ -883,6 +894,7 @@ exports=new TestClass();
 
             // Genesis is stable now
             node._storage.getConciliumsCount = () => 3;
+            node._storage.getActiveConciliumsCount = () => 3;
 
             // create child block21
             let block21;
@@ -928,6 +940,7 @@ exports=new TestClass();
 
                 // Genesis is stable now
                 node._storage.getConciliumsCount = () => 3;
+                node._storage.getActiveConciliumsCount = () => 3;
 
                 // create child block21
                 let block21;
@@ -1086,6 +1099,7 @@ exports=new TestClass();
 
             // Genesis is stable now
             node._storage.getConciliumsCount = () => 3;
+            node._storage.getActiveConciliumsCount = () => 3;
 
             // create child block21
             let block21;

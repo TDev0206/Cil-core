@@ -78,6 +78,8 @@ module.exports = (factory, factoryOptions) => {
 
             this._mutex = new Mutex();
             this._storage = new Storage({...options, mutex: this._mutex});
+            this._storage.on('conciliumsChanged', this._adjustNode.bind(this));
+            this._adjustNode();
 
             // nonce for MsgVersion to detect connection to self (use crypto.randomBytes + readIn32LE) ?
             this._nonce = parseInt(Math.random() * 100000);
@@ -1505,8 +1507,14 @@ module.exports = (factory, factoryOptions) => {
                 return null;
             }
 
-            // check for correct block height
-            if (!isGenesis) this._checkHeight(block);
+            if (!isGenesis) {
+
+                // check for correct block height
+                this._checkHeight(block);
+
+                // prevent attempt to link block lower than stable block of same consilium
+                await this._enforceHeight(block);
+            }
 
             let patchState = await this._pendingBlocks.mergePatches(block.parentHashes);
             patchState.setConciliumId(block.conciliumId);
@@ -1567,7 +1575,7 @@ module.exports = (factory, factoryOptions) => {
 
             // check for finality
             await this._processFinalityResults(
-                await this._pendingBlocks.checkFinality(block.getHash(), await this._storage.getConciliumsCount())
+                await this._pendingBlocks.checkFinality(block.getHash(), await this._storage.getActiveConciliumsCount())
             );
 
             // store pending blocks (for restore state after node restart)
@@ -1634,7 +1642,10 @@ module.exports = (factory, factoryOptions) => {
                 const hash = mapNewConciliumIdHash.get(i) || mapPrevConciliumIdHash.get(i);
 
                 // concilium could be created, but still no final blocks
-                if (hash) arrNewLastApplied.push(hash);
+                if (hash) {
+                    arrNewLastApplied.push(hash);
+                    this._arrConsStableBlocks[i] = hash;
+                }
             }
 
             await this._storage.updateLastAppliedBlocks(arrNewLastApplied);
@@ -2560,6 +2571,30 @@ module.exports = (factory, factoryOptions) => {
             return !this._processedBlock ||
                    (this._processedBlock && this._processedBlock.getHeight() <
                     Constants.forks.HEIGHT_FORK_SERIALIZER_FIX3);
+        }
+
+        async _enforceHeight(block) {
+            // we'll mantain lastStableBlocks in array. index == conciliumId
+//            const arrLastStableHashes = await this._storage.getLastAppliedBlockHashes();
+            const hash = this._arrConsStableBlocks[block.conciliumId];
+            const nSupposedHeight = hash ? this._mainDag.getBlockHeight(hash) : this._getTopStableHeight();
+            assert(block.getHeight() > nSupposedHeight,
+                `Block "${block.getHash()}" height "${block.getHeight()}" should be at least "${nSupposedHeight}"`
+            );
+        }
+
+        _getTopStableHeight() {
+            return this._arrConsStableBlocks.reduce((nTopHeight, hash) => {
+                if (!hash) return nTopHeight;
+                const nBlockHeight = this._mainDag.getBlockHeight(hash);
+                return nBlockHeight > nTopHeight ? nBlockHeight : nTopHeight;
+            }, 0);
+        }
+
+        async _adjustNode() {
+            const nCount = await this._storage.getConciliumsCount();
+            this._arrConsStableBlocks = new Array(nCount || 1);
+            this._arrConsStableBlocks.fill(null);
         }
     };
 };
