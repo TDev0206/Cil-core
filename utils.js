@@ -34,7 +34,6 @@ const deepCloneObject = (objToClone) => {
 const arrayIntersection = (array1, array2) => {
     const cache = new Set(array1);
     return array2.filter(elem => cache.has(elem));
-    return result;
 };
 
 const queryRpc = async (url, strMethod, objParams = {}) => {
