@@ -25,6 +25,8 @@ module.exports = ({UTXO, Contract, TxReceipt}) =>
             this._mapContractStates = new Map();
             this._mapTxReceipts = new Map();
 
+            this._mapTxBlock = new Map();
+
             this._nonce = 0;
         }
 
@@ -149,120 +151,12 @@ module.exports = ({UTXO, Contract, TxReceipt}) =>
 
             const resultPatch = new PatchDB();
 
-            // merge conciliumLevels
-            const arrConciliumIds = getMapsKeysUnique(this._mapConciliumLevel, patch._mapConciliumLevel);
-            for (let conciliumId of arrConciliumIds) {
-                resultPatch._mapConciliumLevel.set(
-                    conciliumId,
-                    Math.max(this._mapConciliumLevel.get(conciliumId) || 0,
-                        patch._mapConciliumLevel.get(conciliumId) || 0
-                    )
-                );
-            }
-
-            // merge UTXOs
-            const arrThisCoinsHashes = Array.from(this._data.coins.keys());
-            const arrAnotherCoinsHashes = Array.from(patch._data.coins.keys());
-
-            const setUnionHashes = new Set(arrThisCoinsHashes.concat(arrAnotherCoinsHashes));
-            for (let coinHash of setUnionHashes) {
-
-                if ((this._data.coins.has(coinHash) && !patch._data.coins.has(coinHash)) ||
-                    (!this._data.coins.has(coinHash) && patch._data.coins.has(coinHash))) {
-
-                    // only one patch have this utxo -> put it in result
-                    const utxo = this._data.coins.get(coinHash) || patch._data.coins.get(coinHash);
-                    const mapSpentOutputs = this._getSpentOutputs(coinHash).size ?
-                        this._getSpentOutputs(coinHash) : patch._getSpentOutputs(coinHash);
-
-                    resultPatch._data.coins.set(coinHash, utxo.clone());
-                    for (let [idx, hash] of mapSpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
-
-                } else {
-
-                    // both has
-                    const utxoMy = this.getUtxo(coinHash);
-                    const utxoHis = patch.getUtxo(coinHash);
-
-                    // if both version of UTXO has index -> put it in result
-                    // if only one has - this means it's spent -> don't put it in result
-                    // if both doesn't have - check it for double spend. if found - throws
-                    // so if we need only intersection we could travers any for indexes
-
-                    // process common (both has) indexes. so we could choose any to pick coins
-                    const arrUnspentIndexes = arrayIntersection(
-                        Array.from(utxoMy.getIndexes()),
-                        Array.from(utxoHis.getIndexes())
-                    );
-                    resultPatch.setUtxo(new UTXO({txHash: coinHash}));
-                    for (let idx of arrUnspentIndexes) {
-                        resultPatch.createCoins(coinHash, idx, utxoMy.coinsAtIndex(idx));
-                    }
-
-                    // all good utxos added to resulting patch now search for double spends
-                    const mapMySpentOutputs = this._getSpentOutputs(coinHash);
-                    const mapHisSpentOutputs = patch._getSpentOutputs(coinHash);
-                    const arrSpentIndexes = arrayIntersection(
-                        Array.from(mapMySpentOutputs.keys()),
-                        Array.from(mapHisSpentOutputs.keys())
-                    );
-                    for (let idx of arrSpentIndexes) {
-                        assert(
-                            mapMySpentOutputs.get(idx).equals(mapHisSpentOutputs.get(idx)),
-                            `Patch merge: conflict on ${coinHash} idx ${idx}`
-                        );
-                    }
-
-                    // no conflicts - store all spending into resulting patch
-                    for (let [idx, hash] of mapMySpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
-                    for (let [idx, hash] of mapHisSpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
-                }
-            }
-
-            // merge contracts
-            const arrContractAddresses = getMapsKeysUnique(this._mapContractStates, patch._mapContractStates);
-            for (let strAddr of arrContractAddresses) {
-
-                let winnerContract;
-
-                // contract belongs always to one concilium
-                const contractThis = this.getContract(strAddr);
-                const contractPatch = patch.getContract(strAddr);
-                if (contractThis && contractPatch) {
-                    assert(
-                        contractThis.getConciliumId() === contractPatch.getConciliumId(),
-                        'Contract belongs to different conciliums'
-                    );
-
-                    winnerContract = bPreferPatchData ||
-                                     patch.getLevel(contractPatch.getConciliumId()) >=
-                                     this.getLevel(contractThis.getConciliumId())
-                        ? contractPatch
-                        : contractThis;
-                } else {
-
-                    // no conflict
-                    winnerContract = contractThis || contractPatch;
-                }
-
-                resultPatch.setContract(winnerContract.clone());
-            }
-
-            // merge receipts
-            // TODO: think is TX collisions possible?
-            const arrTxHashes = getMapsKeysUnique(this._mapTxReceipts, patch._mapTxReceipts);
-            for (let strHash of arrTxHashes) {
-
-                // receipts should be same (if no tx collision)
-                const receiptThis = this._mapTxReceipts.get(strHash);
-                const receiptPatch = patch._mapTxReceipts.get(strHash);
-                if (receiptThis && receiptPatch) {
-                    assert(receiptThis.equals(receiptPatch), 'patch.merge: Tx Collision detected');
-                }
-                const receipt = receiptThis || receiptPatch;
-                patch._mapTxReceipts.get(strHash);
-                resultPatch.setReceipt(strHash, receipt);
-            }
+            this._checkTxCollision(patch);
+            this._mergeMapsTxBlocks(patch, resultPatch);
+            this._mergeConciliumLevels(patch, resultPatch);
+            this._mergeUtxos(patch, resultPatch);
+            this._mergeContracts(patch, resultPatch, bPreferPatchData);
+            this._mergeReceipts(patch, resultPatch);
 
             return resultPatch;
         }
@@ -275,6 +169,8 @@ module.exports = ({UTXO, Contract, TxReceipt}) =>
          * @param {PatchDB} patch - another instance, that we remove from current.
          */
         purge(patch) {
+            this._purgeMapTxBlock(patch);
+
             const arrAnotherCoinsHashes = Array.from(patch._data.coins.keys());
             for (let hash of arrAnotherCoinsHashes) {
                 const utxo = this.getUtxo(hash);
@@ -515,5 +411,190 @@ module.exports = ({UTXO, Contract, TxReceipt}) =>
             this._data.coins.delete(strHash);
             this._mapSpentUtxos.delete(strHash);
 
+        }
+
+        bindTxToBlock(strTxHash, strBlockHash) {
+            typeforce(types.Str64, strTxHash);
+
+            this._mapTxBlock.set(strTxHash, strBlockHash);
+        }
+
+        fixTxToBlockMap(strBlockHashToFix) {
+            typeforce(types.Str64, strBlockHashToFix);
+
+            for (let [strTxHash, strBlockHash] of this._mapTxBlock) {
+                if (strBlockHash === null) this._mapTxBlock.set(strTxHash, strBlockHashToFix);
+            }
+        }
+
+        /**
+         *
+         * @param patch - merged patch
+         * @param resultPatch
+         * @private
+         */
+        _mergeConciliumLevels(patch, resultPatch) {
+            const arrConciliumIds = getMapsKeysUnique(this._mapConciliumLevel, patch._mapConciliumLevel);
+            for (let conciliumId of arrConciliumIds) {
+                resultPatch._mapConciliumLevel.set(
+                    conciliumId,
+                    Math.max(this._mapConciliumLevel.get(conciliumId) || 0,
+                        patch._mapConciliumLevel.get(conciliumId) || 0
+                    )
+                );
+            }
+        }
+
+        /**
+         *
+         * @param patch - merged patch
+         * @param resultPatch
+         * @private
+         */
+        _mergeUtxos(patch, resultPatch) {
+            const arrThisCoinsHashes = Array.from(this._data.coins.keys());
+            const arrAnotherCoinsHashes = Array.from(patch._data.coins.keys());
+
+            const setUnionHashes = new Set(arrThisCoinsHashes.concat(arrAnotherCoinsHashes));
+            for (let coinHash of setUnionHashes) {
+
+                if ((this._data.coins.has(coinHash) && !patch._data.coins.has(coinHash)) ||
+                    (!this._data.coins.has(coinHash) && patch._data.coins.has(coinHash))) {
+
+                    // only one patch have this utxo -> put it in result
+                    const utxo = this._data.coins.get(coinHash) || patch._data.coins.get(coinHash);
+                    const mapSpentOutputs = this._getSpentOutputs(coinHash).size ?
+                        this._getSpentOutputs(coinHash) : patch._getSpentOutputs(coinHash);
+
+                    resultPatch._data.coins.set(coinHash, utxo.clone());
+                    for (let [idx, hash] of mapSpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
+
+                } else {
+
+                    // both has
+                    const utxoMy = this.getUtxo(coinHash);
+                    const utxoHis = patch.getUtxo(coinHash);
+
+                    // if both version of UTXO has index -> put it in result
+                    // if only one has - this means it's spent -> don't put it in result
+                    // if both doesn't have - check it for double spend. if found - throws
+                    // so if we need only intersection we could travers any for indexes
+
+                    // process common (both has) indexes. so we could choose any to pick coins
+                    const arrUnspentIndexes = arrayIntersection(
+                        Array.from(utxoMy.getIndexes()),
+                        Array.from(utxoHis.getIndexes())
+                    );
+                    resultPatch.setUtxo(new UTXO({txHash: coinHash}));
+                    for (let idx of arrUnspentIndexes) {
+                        resultPatch.createCoins(coinHash, idx, utxoMy.coinsAtIndex(idx));
+                    }
+
+                    // all good utxos added to resulting patch now search for double spends
+                    const mapMySpentOutputs = this._getSpentOutputs(coinHash);
+                    const mapHisSpentOutputs = patch._getSpentOutputs(coinHash);
+                    const arrSpentIndexes = arrayIntersection(
+                        Array.from(mapMySpentOutputs.keys()),
+                        Array.from(mapHisSpentOutputs.keys())
+                    );
+                    for (let idx of arrSpentIndexes) {
+                        assert(
+                            mapMySpentOutputs.get(idx).equals(mapHisSpentOutputs.get(idx)),
+                            `Patch merge: conflict on ${coinHash} idx ${idx}`
+                        );
+                    }
+
+                    // no conflicts - store all spending into resulting patch
+                    for (let [idx, hash] of mapMySpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
+                    for (let [idx, hash] of mapHisSpentOutputs) resultPatch._setSpentOutput(coinHash, idx, hash);
+                }
+            }
+        }
+
+        _mergeContracts(patch, resultPatch, bPreferPatchData) {
+            const arrContractAddresses = getMapsKeysUnique(this._mapContractStates, patch._mapContractStates);
+            for (let strAddr of arrContractAddresses) {
+
+                let winnerContract;
+
+                // contract belongs always to one concilium
+                const contractThis = this.getContract(strAddr);
+                const contractPatch = patch.getContract(strAddr);
+                if (contractThis && contractPatch) {
+                    assert(
+                        contractThis.getConciliumId() === contractPatch.getConciliumId(),
+                        'Contract belongs to different conciliums'
+                    );
+
+                    winnerContract = bPreferPatchData ||
+                                     patch.getLevel(contractPatch.getConciliumId()) >=
+                                     this.getLevel(contractThis.getConciliumId())
+                        ? contractPatch
+                        : contractThis;
+                } else {
+
+                    // no conflict
+                    winnerContract = contractThis || contractPatch;
+                }
+
+                resultPatch.setContract(winnerContract.clone());
+            }
+        }
+
+        _mergeReceipts(patch, resultPatch) {
+
+            // TODO: think is TX collisions possible?
+            const arrTxHashes = getMapsKeysUnique(this._mapTxReceipts, patch._mapTxReceipts);
+            for (let strHash of arrTxHashes) {
+
+                // receipts should be same (if no tx collision)
+                const receiptThis = this._mapTxReceipts.get(strHash);
+                const receiptPatch = patch._mapTxReceipts.get(strHash);
+                if (receiptThis && receiptPatch) {
+                    assert(receiptThis.equals(receiptPatch), 'patch.merge: Tx Collision detected');
+                }
+                const receipt = receiptThis || receiptPatch;
+                patch._mapTxReceipts.get(strHash);
+                resultPatch.setReceipt(strHash, receipt);
+            }
+        }
+
+        _mergeMapsTxBlocks(patch, resultPatch) {
+            const arrThisMap = this._mapTxBlock ? Array.from(this._mapTxBlock) : [];
+            const arrPatchMap = patch._mapTxBlock ? Array.from(patch._mapTxBlock) : [];
+            resultPatch._mapTxBlock = new Map([
+                ...arrThisMap,
+                ...arrPatchMap
+            ]);
+        }
+
+        /**
+         *
+         * @param patch - to merge
+         * @private
+         */
+        _checkTxCollision(patch) {
+
+            // this happens when patch isn't block patch. Or deserialized. That's ok
+            if (!this._mapTxBlock || !patch._mapTxBlock || !this._mapTxBlock.size || !patch._mapTxBlock.size) return;
+
+            const arrSameTx = arrayIntersection(
+                Array.from(this._mapTxBlock.keys()),
+                Array.from(patch._mapTxBlock.keys())
+            );
+            for (let strTxHash of arrSameTx) {
+                assert(
+                    this._mapTxBlock.get(strTxHash) === patch._mapTxBlock.get(strTxHash),
+                    `Tx "${strTxHash}" exists in "${this._mapTxBlock.get(strTxHash)}" and "${patch._mapTxBlock.get(
+                        strTxHash)}" !`
+                );
+            }
+        }
+
+        _purgeMapTxBlock(patch) {
+            if (!this._mapTxBlock || !patch._mapTxBlock || !this._mapTxBlock.size || !patch._mapTxBlock.size) return;
+            for (let [strTxHash] of patch._mapTxBlock) {
+                this._mapTxBlock.delete(strTxHash);
+            }
         }
     };

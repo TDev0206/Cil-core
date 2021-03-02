@@ -537,6 +537,7 @@ module.exports = (factory, factoryOptions) => {
                 }
 
                 for (let tx of arrTxToProcess) {
+                    const strTxHash = tx.getHash();
                     try {
 
                         // with current timers and diameter if concilium more than 10 -
@@ -544,7 +545,7 @@ module.exports = (factory, factoryOptions) => {
                         // So we'll skip this TXns
                         if (tx.inputs.length > Constants.MAX_UTXO_PER_TX) continue;
                         const {fee, patchThisTx} = await this._processTx(patchMerged, false, tx);
-
+                        patchThisTx.bindTxToBlock(strTxHash, null);
                         totalFee += fee;
                         patchMerged = patchMerged.merge(patchThisTx, true);
                         block.addTx(tx);
@@ -553,7 +554,7 @@ module.exports = (factory, factoryOptions) => {
                         if (Date.now() - nStartTime > Constants.BLOCK_CREATION_TIME_LIMIT) break;
                     } catch (e) {
                         logger.error(e);
-                        arrBadHashes.push(tx.hash());
+                        arrBadHashes.push(strTxHash);
                     }
                 }
 
@@ -562,9 +563,11 @@ module.exports = (factory, factoryOptions) => {
 
                 block.finish(totalFee, this._wallet.address, await this._getFeeSizePerInput(conciliumId));
                 this._processBlockCoinbaseTX(block, totalFee, patchMerged);
+                const strBlockHash = block.getHash();
+                patchMerged.fixTxToBlockMap(strBlockHash);
 
                 debugWitness(
-                    `Witness: "${this._debugAddress}". Block ${block.hash()} with ${block.txns.length - 1} TXNs ready`);
+                    `Witness: "${this._debugAddress}". Block ${strBlockHash} with ${block.txns.length - 1} TXNs ready`);
             } catch (e) {
                 logger.error(`Failed to create block!`, e);
             } finally {

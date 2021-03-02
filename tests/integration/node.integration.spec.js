@@ -879,7 +879,7 @@ exports=new TestClass();
 
         });
 
-        it('should fail to include blocks with conflicting tx (same) in graph', async function() {
+        it('should fail to include blocks with conflicting tx in graph', async function() {
 
             // Genesis is stable now
             node._storage.getConciliumsCount = () => 3;
@@ -923,7 +923,7 @@ exports=new TestClass();
 
         });
 
-        it('should fail to include blocks with conflicting tx (same) in graph (with interleave block)',
+        it('should fail to include blocks with conflicting tx in graph (with interleave block)',
             async function() {
 
                 // Genesis is stable now
@@ -979,17 +979,120 @@ exports=new TestClass();
             }
         );
 
-        it('should unwind conflictingblock that lose', async function() {
+        it('should fail for same tx (fork). Same consilium',
+            async function() {
+                const txSame = createTx(0);
 
                 // Genesis is stable now
-                node._storage.getConciliumsCount = () => 3;
+                node._storage.getConciliumsCount = () => 2;
 
                 // create child block21
                 let block21;
                 {
                     block21 = new factory.Block(0);
                     block21.parentHashes = [gBlock.getHash()];
-                    block21.addTx(createTx(0));
+                    block21.addTx(txSame);
+                    block21.finish(1e6 - 2e3, generateAddress());
+
+                    block21.setHeight(node._calcHeight(block21.parentHashes));
+                }
+                await processBlock(node, block21);
+
+                // create empty block22
+                let block22;
+                {
+                    block22 = new factory.Block(0);
+                    block22.addTx(txSame);
+                    block22.parentHashes = [gBlock.getHash()];
+                    block22.finish(1e6 - 2e3, generateAddress());
+
+                    block22.setHeight(node._calcHeight(block22.parentHashes));
+                }
+                await processBlock(node, block22);
+
+                // create child block41
+                let block41;
+                {
+                    block41 = new factory.Block(2);
+                    block41.parentHashes = [block21.getHash(), block22.getHash()];
+                    block41.finish(0, generateAddress());
+
+                    block41.setHeight(node._calcHeight(block41.parentHashes));
+                }
+
+                const strErr = `Tx "${txSame.getHash().toString('hex')}" exists in`;
+                return assert.isRejected(processBlock(node, block41), new RegExp(strErr));
+            }
+        );
+
+        it('should fail for same tx (fork + interleave block). Same consilium',
+            async function() {
+                const txSame = createTx(0);
+
+                // Genesis is stable now
+                node._storage.getConciliumsCount = () => 2;
+
+                // create child block21
+                let block21;
+                {
+                    block21 = new factory.Block(0);
+                    block21.parentHashes = [gBlock.getHash()];
+                    block21.addTx(txSame);
+                    block21.finish(1e6 - 2e3, generateAddress());
+
+                    block21.setHeight(node._calcHeight(block21.parentHashes));
+                }
+                await processBlock(node, block21);
+
+                // create empty block31 with parent of block21
+                let block31;
+                {
+                    block31 = new factory.Block(0);
+                    block31.parentHashes = [block21.getHash()];
+                    block31.finish(0, generateAddress());
+
+                    block31.setHeight(node._calcHeight(block31.parentHashes));
+                }
+                await processBlock(node, block31);
+
+                // create empty block22
+                let block22;
+                {
+                    block22 = new factory.Block(0);
+                    block22.addTx(txSame);
+                    block22.parentHashes = [gBlock.getHash()];
+                    block22.finish(1e6 - 2e3, generateAddress());
+
+                    block22.setHeight(node._calcHeight(block22.parentHashes));
+                }
+                await processBlock(node, block22);
+
+                // create child block41
+                let block41;
+                {
+                    block41 = new factory.Block(2);
+                    block41.parentHashes = [block22.getHash(), block31.getHash()];
+                    block41.finish(0, generateAddress());
+
+                    block41.setHeight(node._calcHeight(block41.parentHashes));
+                }
+
+                const strErr = `Tx "${txSame.getHash().toString('hex')}" exists in`;
+                return assert.isRejected(processBlock(node, block41), new RegExp(strErr));
+            }
+        );
+
+        it('should unwind conflicting tip that lose', async function() {
+
+            // Genesis is stable now
+            node._storage.getConciliumsCount = () => 3;
+
+            // create child block21
+            let block21;
+            {
+                block21 = new factory.Block(0);
+                block21.parentHashes = [gBlock.getHash()];
+                block21.addTx(createTx(0));
                     block21.finish(1e6 - 2e3, generateAddress());
 
                     block21.setHeight(node._calcHeight(block21.parentHashes));

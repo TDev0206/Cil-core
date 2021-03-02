@@ -1497,6 +1497,7 @@ module.exports = (factory, factoryOptions) => {
          */
         async _execBlock(block) {
             const isGenesis = this.isGenesisBlock(block);
+            const strBlockHash = block.getHash();
 
             // double check: whether we already processed this block?
             if (this._isBlockExecuted(block.getHash())) {
@@ -1516,8 +1517,10 @@ module.exports = (factory, factoryOptions) => {
             // should start from 1, because coinbase tx need different processing
             for (let i = 1; i < blockTxns.length; i++) {
                 const tx = new Transaction(blockTxns[i]);
-                assert(tx.conciliumId === block.conciliumId, `Tx ${tx.getHash()} conciliumId differ from block's one`);
+                const strTxHash = tx.getHash();
+                assert(tx.conciliumId === block.conciliumId, `Tx ${strTxHash} conciliumId differ from block's one`);
                 const {fee, patchThisTx} = await this._processTx(patchState, isGenesis, tx);
+                patchThisTx.bindTxToBlock(strTxHash, strBlockHash);
                 blockFees += fee;
                 patchState = patchState.merge(patchThisTx, true);
             }
@@ -1527,7 +1530,7 @@ module.exports = (factory, factoryOptions) => {
                 this._processBlockCoinbaseTX(block, blockFees, patchState);
             }
 
-            debugNode(`Block ${block.getHash()} being executed`);
+            debugNode(`Block ${strBlockHash} being executed`);
             return patchState;
         }
 
