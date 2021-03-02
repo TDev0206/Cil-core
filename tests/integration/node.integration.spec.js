@@ -998,6 +998,7 @@ exports=new TestClass();
 
                 // Genesis is stable now
                 node._storage.getConciliumsCount = () => 2;
+                node._storage.getActiveConciliumsCount = () => 2;
 
                 // create child block21
                 let block21;
@@ -1044,6 +1045,7 @@ exports=new TestClass();
 
                 // Genesis is stable now
                 node._storage.getConciliumsCount = () => 2;
+                node._storage.getActiveConciliumsCount = () => 2;
 
                 // create child block21
                 let block21;

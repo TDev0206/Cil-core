@@ -693,6 +693,7 @@ describe('Node tests', async () => {
 
         const arrPendingHashes = await node._storage.getPendingBlockHashes();
         const arrStableHashes = await node._storage.getLastAppliedBlockHashes();
+        await node._buildMainDag(arrStableHashes, arrPendingHashes);
 
         await node._rebuildPending(arrStableHashes, arrPendingHashes);
 
@@ -720,6 +721,8 @@ describe('Node tests', async () => {
 
         const arrPendingHashes = await node._storage.getPendingBlockHashes();
         const arrStableHashes = await node._storage.getLastAppliedBlockHashes();
+        await node._buildMainDag(arrStableHashes, arrPendingHashes);
+
         await node._rebuildPending(arrStableHashes, arrPendingHashes);
 
         assert.equal(node._pendingBlocks.getDag().order, 4);

@@ -1779,7 +1779,9 @@ module.exports = (factory, factoryOptions) => {
                     await this._mainDag.addBlock(bi);
 
                     for (let parentHash of bi.parentHashes) {
-                        if (!this._mainDag.getBlockInfo(parentHash)) setNextLevel.add(parentHash);
+                        if (!this.isGenesisBlock(bi) && !this._mainDag.getBlockInfo(parentHash)) {
+                            setNextLevel.add(parentHash);
+                        }
                     }
                 }
 
@@ -2573,22 +2575,47 @@ module.exports = (factory, factoryOptions) => {
                     Constants.forks.HEIGHT_FORK_SERIALIZER_FIX3);
         }
 
+        /**
+         * 1. BlockHeight should be greater than height of last stable block for consilium
+         * 2. Parents height should be no less (it could be a parent!) than last stable block for parents consilium
+         *
+         * @param {Block} block - block we process
+         * @return {Promise<void>}
+         * @private
+         */
         async _enforceHeight(block) {
+
             // we'll mantain lastStableBlocks in array. index == conciliumId
 //            const arrLastStableHashes = await this._storage.getLastAppliedBlockHashes();
             const hash = this._arrConsStableBlocks[block.conciliumId];
-            const nSupposedHeight = hash ? this._mainDag.getBlockHeight(hash) : this._getTopStableHeight();
-            assert(block.getHeight() > nSupposedHeight,
-                `Block "${block.getHash()}" height "${block.getHeight()}" should be at least "${nSupposedHeight}"`
+
+            const nMinimalHeight = hash ? this._mainDag.getBlockHeight(hash) : this._getTopStableHeight();
+            assert(
+                block.getHeight() > nMinimalHeight,
+                `Block "${block.getHash()}" height "${block.getHeight()}" should be at least "${nMinimalHeight}"`
             );
+
+            for (let hash of block.parentHashes) {
+                const biParent = this._mainDag.getBlockInfo(hash);
+                const nMinConciliumHeight = this._getTopStableHeight(biParent.getConciliumId()) || nMinimalHeight;
+                assert(
+                    biParent.getHeight() >= nMinConciliumHeight,
+                    `Block "${block.getHash()}" height "${block.getHeight()}" should be at least "${nMinConciliumHeight}"`
+                );
+            }
         }
 
-        _getTopStableHeight() {
-            return this._arrConsStableBlocks.reduce((nTopHeight, hash) => {
-                if (!hash) return nTopHeight;
-                const nBlockHeight = this._mainDag.getBlockHeight(hash);
-                return nBlockHeight > nTopHeight ? nBlockHeight : nTopHeight;
-            }, 0);
+        _getTopStableHeight(nConciliumId) {
+            if (nConciliumId) {
+                const hash = this._arrConsStableBlocks[nConciliumId];
+                return hash ? this._mainDag.getBlockHeight(hash) : undefined;
+            } else {
+                return this._arrConsStableBlocks.reduce((nTopHeight, hash) => {
+                    if (!hash) return nTopHeight;
+                    const nBlockHeight = this._mainDag.getBlockHeight(hash);
+                    return nBlockHeight > nTopHeight ? nBlockHeight : nTopHeight;
+                }, 0);
+            }
         }
 
         async _adjustNode() {
